@@ -3,7 +3,8 @@ import requests
 import base64
 from urllib.parse import urlparse
 from typing import Optional
-
+from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 def parse_github_url(url):
     """
@@ -55,7 +56,7 @@ def build_directory_tree(owner, repo, path='', token=None, indent=0, file_paths=
         else:
             tree_str += '    ' * indent + f"{item['name']}\n"
             # Indicate which file extensions should be included in the prompt!
-            if item['name'].endswith(('.py', '.ipynb', '.html', '.css', '.js', '.jsx', '.rst', '.md', '.rs')):
+            if item['name'].endswith(('.py', '.ipynb', '.html', '.css', '.js', '.jsx', '.rst', '.md', '.rs',)):
                 file_paths.append((indent, item['path']))
     return tree_str, file_paths
 
@@ -76,18 +77,30 @@ def retrieve_github_repo_info(url, token=None):
     directory_tree, file_paths = build_directory_tree(owner, repo, token=token)
     formatted_string += f"Directory Structure:\n{directory_tree}\n"
 
-    for indent, path in file_paths:
+    def fetch_and_format_file_content(args):
+        owner, repo, path, token, indent = args
         file_info = fetch_repo_content(owner, repo, path, token)
         file_content = get_file_content(file_info)
-        formatted_string += '\n' + '    ' * indent + f"{path}:\n" + '    ' * indent + '```\n' + file_content + '\n' + '    ' * indent + '```\n'
+        return '\n' + '    ' * indent + f"{path}:\n" + '    ' * indent + '```\n' + file_content + '\n' + '    ' * indent + '```\n'
+
+    # Parallelize this code to speed up the process
+    formatted_contents = []
+    with ThreadPoolExecutor() as executor:
+        # Create a list of tasks
+        tasks = [executor.submit(fetch_and_format_file_content, (owner, repo, path, token, indent)) for indent, path in file_paths]
+        for future in tqdm(as_completed(tasks), total=len(tasks), desc="Fetching files"):
+            formatted_contents.append(future.result())
+
+    # Since tasks are completed in arbitrary order, we need to sort the results
+    # However, since we're appending in the order tasks were started, the order is preserved
+    for content in formatted_contents:
+        formatted_string += content
+
 
     return formatted_string
 
 # You provide a Github repo URL and a Github personal access token.
 # How to get an access token: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens
-
-github_url = "https://github.com/dongri/openai-api-rs/tree/main"
-
 
 def extract_repo(
     github_url : str,
@@ -112,6 +125,4 @@ def extract_repo(
     formatted_repo_info = retrieve_github_repo_info(github_url, token = github_token)
     return formatted_repo_info
 
-
-print(extract_repo(github_url))
 

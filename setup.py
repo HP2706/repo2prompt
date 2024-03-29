@@ -8,5 +8,6 @@ setup(
     package_dir={"": "src"},
     install_requires=[
         'requests>=2.20.0',
+        'tqdm>=4.60.0',
     ],
 )

@@ -4,7 +4,6 @@ import base64
 from urllib.parse import urlparse
 from typing import Optional
 
-
 def parse_github_url(url):
     """
     Parses your GitHub URL and extracts the repository owner and name.
@@ -88,7 +87,6 @@ def retrieve_github_repo_info(url, token=None):
 
 github_url = "https://github.com/dongri/openai-api-rs/tree/main"
 
-
 def extract_repo(
     github_url : str,
     github_token : Optional[str] = None, 
@@ -102,6 +100,13 @@ def extract_repo(
     '''
     if github_token is None:
         github_token = os.getenv("GITHUB_TOKEN")
+
+    if github_url.split('/')[-2] != 'tree':
+        raise ValueError(
+            "Please provide a URL that ends with 'tree', 'tree/main', or 'tree/branch_name'. "
+            f"Got URL: {github_url}"
+        )
+
     formatted_repo_info = retrieve_github_repo_info(github_url, token = github_token)
     return formatted_repo_info
 
