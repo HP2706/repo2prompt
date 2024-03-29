@@ -4,8 +4,12 @@ import base64
 from urllib.parse import urlparse
 from typing import Optional
 from tqdm import tqdm
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Coroutine
+import asyncio
+import aiohttp
+
+
+
 
 def parse_github_url(url):
     """
@@ -19,7 +23,7 @@ def parse_github_url(url):
     else:
         raise ValueError("Invalid GitHub URL provided!")
 
-def fetch_repo_content(owner, repo, path='', token=None):
+async def fetch_repo_content(owner, repo, path='', token=None):
     """
     Fetches the content of your GitHub repository.
     """
@@ -27,11 +31,12 @@ def fetch_repo_content(owner, repo, path='', token=None):
     headers = {"Accept": "application/vnd.github.v3+json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    response = requests.get(base_url, headers=headers)
-    if response.status_code == 200:
-        return response.json()
-    else:
-        response.raise_for_status()
+    async with aiohttp.ClientSession() as session:
+        async with session.get(base_url, headers=headers) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                raise Exception(f"Error fetching content: {response.status}")
 
 def get_file_content(file_info):
     """
@@ -42,113 +47,105 @@ def get_file_content(file_info):
     else:
         return file_info['content']
 
-def build_directory_tree(
-    owner : str, 
-    repo : str, 
-    path : str ='', 
-    token : Optional[str] = None, 
-    indent : int = 0, 
-    file_paths : List[tuple[int, str]] =[],
-    is_base : bool = False
+
+
+async def build_directory_tree(
+    owner: str,
+    repo: str,
+    path: str = '',
+    token: Optional[str] = None,
+    indent: int = 0,
+    file_paths: List[tuple[int, str]] = [],
+    is_base: bool = False
 ) -> tuple[str, List[tuple[int, str]]]:
     
-    def process_item(
-        item : Dict[str, Any], 
-        tree_str : str, 
-        file_paths : List[tuple[int, str]], 
-        indent : int
-    )-> tuple[str, List[tuple[int, str]]]:
+    async def process_item(item: Dict[str, Any], tree_str: str, file_paths: List[tuple[int, str]], indent: int) -> tuple[str, List[tuple[int, str]]]:
         if '.github' in item['path'].split('/'):
             pass
         if item['type'] == 'dir':
-            tree_str += '    ' * indent + f"[{item['name']}/]\n"
-            tree_str += build_directory_tree(
-                owner, repo, item['path'], token, indent + 1, file_paths, is_base=False
-            )[0]
+            tree_str += ' ' * indent + f"[{item['name']}/]\n"
+            tree_str += (await build_directory_tree(owner, repo, item['path'], token, indent + 1, file_paths, is_base=False))[0]
         else:
-            tree_str += '    ' * indent + f"{item['name']}\n"
+            tree_str += ' ' * indent + f"{item['name']}\n"
             # Indicate which file extensions should be included in the prompt!
             if item['name'].endswith(('.py', '.ipynb', '.html', '.css', '.js', '.jsx', '.rst', '.md', '.rs',)):
                 file_paths.append((indent, item['path']))
         return tree_str, file_paths
-   
-    items = fetch_repo_content(owner, repo, path, token)
+
+    items = await fetch_repo_content(owner, repo, path, token)
     if items is None:
         return "", file_paths
-    
     tree_str = ""
-    with ThreadPoolExecutor() as executor:
-        futures = [executor.submit(process_item, item, "", file_paths, indent) for item in items]
-        file_paths = []
-        tree_str = ""
-        
-        if is_base:
-            for future in tqdm(
-                as_completed(futures), total=len(futures), desc="Building tree"
-            ):
-                res = future.result()
-                tree_str += res[0]
-                file_paths.extend(res[1])
-        else:
-            for future in as_completed(futures):
-                res = future.result()
-                tree_str += res[0]
-                file_paths.extend(res[1])
-        
+    tasks = [process_item(item, "", file_paths, indent) for item in items]
+    file_paths = []
+    tree_str = ""
+    if is_base:
+        for future in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Building tree"):
+            res = await future
+            tree_str += res[0]
+            file_paths.extend(res[1])
+    else:
+        for future in asyncio.as_completed(tasks):
+            res = await future
+            tree_str += res[0]
+            file_paths.extend(res[1])
     return tree_str, file_paths
 
 
-def extract_repo(
-    github_url : str,
-    github_token : Optional[str] = None, 
-)-> tuple[str, str]:
+
+                                            
+async def fetch_file_content(args, semaphore) -> str:
+    owner, repo, path, token, indent = args
+    async with semaphore:
+        file_info = await fetch_repo_content(owner, repo, path, token)
+        file_content = get_file_content(file_info)
+        return '\n' + ' ' * indent + f"{path}:\n" + ' ' * indent + '\n' + file_content + '\n' + ' ' * indent + '\n'
+
+async def fetch_file_contents(owner, repo, file_paths, github_token) -> str:
+    semaphore = asyncio.Semaphore(100)  # Limit the number of concurrent file fetches
+    tasks = [
+        fetch_file_content(
+            (owner, repo, path, github_token, indent), semaphore
+        ) 
+        for indent, path in file_paths
+    ]
+    formatted_contents : List[str] = []
+    for future in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Fetching files"): 
+        # as_completed does not preserve order, could be a problem
+        formatted_contents.append(await future)
+    return ''.join(formatted_contents)
+
+async def extract_repo(
+    github_url: str,
+    github_token: Optional[str] = None,
+) -> tuple[str, str]:
     '''
     Args:
-        github_url : str : A URL to a Github repository, must use tree/main or tree/branch_name
-        github_token : Optional[str] : A Github personal access token, if not provided will use the GITHUB_TOKEN env variable
+    github_url : str : A URL to a Github repository, must use tree/main or tree/branch_name
+    github_token : Optional[str] : A Github personal access token, if not provided will use the GITHUB_TOKEN env variable
     Returns:
-        str : A string representation of the repository information, suitable for use in a prompt
+    str : A string representation of the repository information, suitable for use in a prompt
     '''
     if github_token is None:
         github_token = os.getenv("GITHUB_TOKEN")
-
     if github_url.split('/')[-2] != 'tree':
         raise ValueError(
-            "Please provide a URL that ends with 'tree', 'tree/main', or 'tree/branch_name'. "
-            f"Got URL: {github_url}"
-        )
-   
+    "Please provide a URL that ends with 'tree', 'tree/main', or 'tree/branch_name'. "
+    f"Got URL: {github_url}"
+    )
     owner, repo = parse_github_url(github_url)
+   
+    readme_info = await fetch_repo_content(owner, repo, 'README.md', github_token)
+    readme_content = get_file_content(readme_info)
+    formatted_string = f"README.md:\n\n{readme_content}\n\n\n"
 
-    try:
-        readme_info = fetch_repo_content(owner, repo, 'README.md', github_token)
-        readme_content = get_file_content(readme_info)
-        formatted_string = f"README.md:\n```\n{readme_content}\n```\n\n"
-    except Exception as e:
-        formatted_string = "README.md: Not found or error fetching README\n\n"
+    import time
+    t0 = time.time()
+    directory_tree, file_paths = await build_directory_tree(owner, repo, token=github_token, is_base=True)
+    print(f"Time in build_directory_tree: {time.time() - t0:.2f} seconds")
 
-    directory_tree, file_paths = build_directory_tree(owner, repo, token=github_token, is_base = True)
-
-    def fetch_and_format_file_content(args):
-        owner, repo, path, token, indent = args
-        file_info = fetch_repo_content(owner, repo, path, token)
-        file_content = get_file_content(file_info)
-        return '\n' + '    ' * indent + f"{path}:\n" + '    ' * indent + '```\n' + file_content + '\n' + '    ' * indent + '```\n'
-
-    formatted_contents = []
-    with ThreadPoolExecutor() as executor:
-        tasks = [
-            executor.submit(
-                fetch_and_format_file_content, (owner, repo, path, github_token, indent)
-            ) for indent, path in file_paths
-        ]
-        for future in tqdm(as_completed(tasks), total=len(tasks), desc="Fetching files"):
-            formatted_contents.append(future.result())
-
-    formatted_string = ''.join(formatted_contents)
-
-    return formatted_string, directory_tree
-
-
-
-
+    import time
+    t0 = time.time()
+    formatted_string += await fetch_file_contents(owner, repo, file_paths, github_token)
+    print(f"Time in fetch_file_contents: {time.time() - t0:.2f} seconds")
+    return formatted_string, directory_tree                                    
