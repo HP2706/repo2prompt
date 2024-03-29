@@ -2,8 +2,8 @@
 
 This is a simple package with minimal dependencies that turns a Github Repo's contents into a big prompt for long-context models.
 
-this work for repos containing the following file types:
-'.py', '.ipynb', '.html', '.css', '.js', '.jsx', '.rst', '.md'
+this work for repos containing rust, python, javascript containing via the following file types:
+'.py', '.ipynb', '.html', '.css', '.js', '.jsx', '.rst', '.md', '.rs'
 
 Example Usage:
 
