@@ -1,15 +1,12 @@
 # repo2prompt
-Turn a Github Repo's contents into a big prompt for long-context models like Claude 3 Opus.
 
-<a target="_blank" href="https://colab.research.google.com/github/andrewgcodes/repo2prompt/blob/main/repo2prompt.ipynb">
-  <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
-</a>
+This is a simple package with minimal dependencies that turns a Github Repo's contents into a big prompt for long-context models.
 
-Super easy:
-You will need a Github repo URL (public) and a Github access token. You can also use this with private repos but your token will need to have those permissions.
+Example Usage:
 
-Within the build_directory_tree function, you can specify which file extensions should be included in the output.
+```python
+from repo2prompt.extraction import extract_repo
 
-The output is saved to a .txt file with name [repo]-formatted-prompt.txt
+extract_repo(github_url="https://github.com/vllm-project/vllm/tree", github_token="your_github_token")
+```
 
-By the way, Github is limited to 5,000 API requests per hour so if a bug happens, that might be why!

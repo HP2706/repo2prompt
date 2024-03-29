@@ -102,13 +102,6 @@ def extract_repo(
     '''
     if github_token is None:
         github_token = os.getenv("GITHUB_TOKEN")
-
-    if github_url.split('/')[-2] != 'tree':
-        raise ValueError(
-            "Please provide a URL that ends with 'tree', 'tree/main', or 'tree/branch_name'. "
-            f"Got URL: {github_url}"
-        )
-
     formatted_repo_info = retrieve_github_repo_info(github_url, token = github_token)
     return formatted_repo_info
 
