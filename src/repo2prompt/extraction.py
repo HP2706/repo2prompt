@@ -7,7 +7,7 @@ from typing import List, Dict, Any
 import asyncio
 import aiohttp
 from .types import RateLimitExceeded
-
+import time
 
 def parse_github_url(url):
     """
@@ -92,9 +92,6 @@ async def build_directory_tree(
             tree_str += res[0]
             file_paths.extend(res[1])
     return tree_str, file_paths
-
-
-
                                             
 async def fetch_file_content(args, semaphore) -> str:
     owner, repo, path, token, indent = args
@@ -104,7 +101,7 @@ async def fetch_file_content(args, semaphore) -> str:
         return '\n' + ' ' * indent + f"{path}:\n" + ' ' * indent + '\n' + file_content + '\n' + ' ' * indent + '\n'
 
 async def fetch_file_contents(owner, repo, file_paths, github_token) -> str:
-    semaphore = asyncio.Semaphore(100)  # Limit the number of concurrent file fetches
+    semaphore = asyncio.Semaphore(20)  # Limit the number of concurrent file fetches
     tasks = [
         fetch_file_content(
             (owner, repo, path, github_token, indent), semaphore
@@ -140,12 +137,9 @@ async def extract_repo(
     readme_content = get_file_content(readme_info)
     formatted_string = f"README.md:\n\n{readme_content}\n\n\n"
 
-    import time
     t0 = time.time()
     directory_tree, file_paths = await build_directory_tree(owner, repo, token=github_token, is_base=True)
     print(f"Time in build_directory_tree: {time.time() - t0:.2f} seconds")
-
-    import time
     t0 = time.time()
     formatted_string += await fetch_file_contents(owner, repo, file_paths, github_token)
     print(f"Time in fetch_file_contents: {time.time() - t0:.2f} seconds")

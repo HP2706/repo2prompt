@@ -1,8 +1,8 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='repo2prompt',
-    version='0.1.0',
+    name='Repo2Prompt',
+    version='0.1.1',
     description='Github repo -> prompt string',
     packages=find_packages(where="src"),
     package_dir={"": "src"},
