@@ -9,5 +9,6 @@ setup(
     install_requires=[
         'requests>=2.20.0',
         'tqdm>=4.60.0',
+        'aiohttp>=3.9.1',
     ],
 )

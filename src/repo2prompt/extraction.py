@@ -1,14 +1,12 @@
 import os
-import requests
 import base64
 from urllib.parse import urlparse
 from typing import Optional
 from tqdm import tqdm
-from typing import List, Dict, Any, Coroutine
+from typing import List, Dict, Any
 import asyncio
 import aiohttp
-
-
+from .types import RateLimitExceeded
 
 
 def parse_github_url(url):
@@ -36,7 +34,11 @@ async def fetch_repo_content(owner, repo, path='', token=None):
             if response.status == 200:
                 return await response.json()
             else:
-                raise Exception(f"Error fetching content: {response.status}")
+                if response.status == 403:
+                    raise RateLimitExceeded
+                
+                else:
+                    raise Exception(f"Error fetching content: {response.status}")
 
 def get_file_content(file_info):
     """
@@ -109,10 +111,9 @@ async def fetch_file_contents(owner, repo, file_paths, github_token) -> str:
         ) 
         for indent, path in file_paths
     ]
-    formatted_contents : List[str] = []
-    for future in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Fetching files"): 
-        # as_completed does not preserve order, could be a problem
-        formatted_contents.append(await future)
+
+    # we use asyncio.gather to ensure the order of results matches the order of tasks
+    formatted_contents = await asyncio.gather(*tasks)
     return ''.join(formatted_contents)
 
 async def extract_repo(

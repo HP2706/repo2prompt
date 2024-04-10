@@ -21,3 +21,5 @@ from repo2prompt.extraction import extract_repo
 extract_repo(github_url="https://github.com/vllm-project/vllm/tree/main") # os.getenv("GITHUB_TOKEN") used internally
 ```
 
+an important thing to note, github only allows 5000 requests per hour, so be careful
+
