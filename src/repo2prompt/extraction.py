@@ -100,8 +100,8 @@ async def fetch_file_content(args, semaphore) -> str:
         file_content = get_file_content(file_info)
         return '\n' + ' ' * indent + f"{path}:\n" + ' ' * indent + '\n' + file_content + '\n' + ' ' * indent + '\n'
 
-async def fetch_file_contents(owner, repo, file_paths, github_token) -> str:
-    semaphore = asyncio.Semaphore(20)  # Limit the number of concurrent file fetches
+async def fetch_file_contents(owner, repo, file_paths, github_token, concurrency) -> str:
+    semaphore = asyncio.Semaphore(concurrency)  # Limit the number of concurrent file fetches
     tasks = [
         fetch_file_content(
             (owner, repo, path, github_token, indent), semaphore
@@ -116,11 +116,13 @@ async def fetch_file_contents(owner, repo, file_paths, github_token) -> str:
 async def extract_repo(
     github_url: str,
     github_token: Optional[str] = None,
+    max_concurrent_requests: int = 100
 ) -> tuple[str, str]:
     '''
     Args:
-    github_url : str : A URL to a Github repository, must use tree/main or tree/branch_name
-    github_token : Optional[str] : A Github personal access token, if not provided will use the GITHUB_TOKEN env variable
+    github_url : str,  A URL to a Github repository, must use tree/main or tree/branch_name
+    github_token : Optional[str],  A Github personal access token, if not provided will use the GITHUB_TOKEN env variable
+    max_concurrent_requests : int,  The number of concurrent files that are being read
     Returns:
     str : A string representation of the repository information, suitable for use in a prompt
     '''
@@ -141,6 +143,8 @@ async def extract_repo(
     directory_tree, file_paths = await build_directory_tree(owner, repo, token=github_token, is_base=True)
     print(f"Time in build_directory_tree: {time.time() - t0:.2f} seconds")
     t0 = time.time()
-    formatted_string += await fetch_file_contents(owner, repo, file_paths, github_token)
+    formatted_string += await fetch_file_contents(
+        owner, repo, file_paths, github_token, max_concurrent_requests
+    )
     print(f"Time in fetch_file_contents: {time.time() - t0:.2f} seconds")
     return formatted_string, directory_tree                                    
